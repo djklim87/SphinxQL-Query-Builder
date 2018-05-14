@@ -448,7 +448,7 @@ class Percolate
     /**
      * Check string is valid json
      *
-     * @param string $string
+     * @param string $json
      * @return bool
      */
     private function checkJson($json)
