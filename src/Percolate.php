@@ -45,7 +45,7 @@ class Percolate
     /**
      * Documents for CALL PQ
      *
-     * @var array
+     * @var array|string
      */
     protected $documents;
 
@@ -234,11 +234,13 @@ class Percolate
      */
     public function insert($query, $noEscape = false)
     {
+        $this->clear();
         if (!$noEscape) {
             $query = $this->escapeString($query);
         }
         $this->query = $query;
         $this->type = 'insert';
+
         return $this;
     }
 
@@ -272,18 +274,17 @@ class Percolate
     {
 
         if ($this->type == 'insert') {
-            $result = $this->sphinxQL
+            return $this->sphinxQL
                 ->insert()
                 ->into($this->index)
-                ->set($this->generateInsert());
-        } else {
-            $result = $this->sphinxQL
-                ->query("CALL PQ ('" .
-                    $this->index . "', " . $this->getDocuments() . " " . $this->getOptions() . ")");
+                ->set($this->generateInsert())
+                ->execute();
         }
 
-        $this->clear();
-        return $result->execute();
+        return $this->sphinxQL
+            ->query("CALL PQ ('" .
+                $this->index . "', " . $this->getDocuments() . " " . $this->getOptions() . ")")
+            ->execute();
     }
 
     /**
@@ -373,13 +374,15 @@ class Percolate
      * Get documents for CALL PQ. If option setted JSON - returns json_encoded
      *
      *
-     * If expect json = 0:
-     *      - doc can be 'catch me'
-     *      - doc can be multiple ['catch me if can','catch me']
+     * 1) If expect json = 0:
+     *      a) doc can be 'catch me'
+     *      b) doc can be multiple ['catch me if can','catch me']
      *
-     * If expect json = 1:
-     *      - doc can be associate array ['foo'=>'bar']
-     *      - doc can be array of associate arrays [['foo'=>'bar'], ['foo1'=>'bar1']]
+     * 2) If expect json = 1:
+     *      a) doc can be jsonOBJECT {"subject": "document about orange"}
+     *      b) docs can be jsonARRAY of jsonOBJECTS [{"subject": "document about orange"}, {"doc": "document about orange"}]
+     *      c) doc can be associate array ['subject'=>'document about orange']
+     *      d) docs can be array of associate arrays [['subject'=>'document about orange'], ['doc'=>'document about orange']]
      *
      *
      * @return string
@@ -389,22 +392,37 @@ class Percolate
     {
         if (!empty($this->documents)) {
 
+            /** if jsonOBJECT or jsonARRAY of jsonOBJECTS */
+            $json = $this->checkJson($this->documents);
+            if ($json) {
+                $this->options[self::OPTION_DOC_JSON] = 1;
+                return $json;
+            }
+
+
             if ($this->options[self::OPTION_DOC_JSON]) {
                 if (!is_array($this->documents)) {
                     throw new SphinxQLException(
                         'Options sets as json but documents is string (associate array expected)');
                 }
 
-                if (!$this->isAssocArray($this->documents) && !is_array($this->documents[0])) {
-                    throw new SphinxQLException('Documents array must be associate');
+                if (!$this->isAssocArray($this->documents)) {
+                    if (!is_array($this->documents[0])) {
+                        throw new SphinxQLException('Documents array must be associate');
+
+                    } elseif (!empty($this->documents[0]) && $this->isAssocArray($this->documents[0])) {
+
+                        /** if doc is array of associate arrays [['foo'=>'bar'], ['foo1'=>'bar1']] */
+                        return $this->convertArrayForQuery($this->documents);
+                    }
                 }
 
-                return '\'' . json_encode($this->documents) . '\'';
+                return $this->quoteString(json_encode($this->documents)); // Id doc is associate array ['foo'=>'bar']
             } else {
                 if (is_array($this->documents)) {
-                    return '(\'' . implode('\', \'', $this->documents) . '\')';
+                    return '(' . $this->quoteString(implode('\', \'', $this->documents)) . ')';
                 } else {
-                    return '\'' . $this->documents . '\'';
+                    return $this->quoteString($this->documents);
                 }
             }
 
@@ -421,7 +439,63 @@ class Percolate
      */
     public function callPQ()
     {
+        $this->clear();
         $this->type = 'call';
         return $this;
+    }
+
+
+    /**
+     * Check string is valid json
+     *
+     * @param string $string
+     * @return bool
+     */
+    private function checkJson($json)
+    {
+        if (is_array($json)) {
+            return false;
+        }
+        $array = json_decode($json, true);
+
+        if (json_last_error() == JSON_ERROR_NONE) { // if json
+            if (!empty($array[0])) { // If docs is jsonARRAY of jsonOBJECTS
+                return $this->convertArrayForQuery($array);
+            }
+            // If docs is jsonOBJECT
+            return $this->quoteString($json);
+        }
+        return false;
+    }
+
+
+    /**
+     * Converts array of associate arrays to valid for query statement
+     * ('jsonOBJECT1', 'jsonOBJECT2' ...)
+     *
+     *
+     * @param array $array
+     * @return string
+     */
+    private function convertArrayForQuery(array $array)
+    {
+        $documents = [];
+        foreach ($array as $document) {
+            $documents[] = json_encode($document);
+        }
+
+        return '(' . $this->quoteString(implode('\', \'', $documents)) . ')';
+    }
+
+
+    /**
+     * Adding single quotes to string
+     *
+     * @param string $string
+     * @return string
+     */
+    private function quoteString($string)
+    {
+        return '\'' . $string . '\'';
     }
 }
