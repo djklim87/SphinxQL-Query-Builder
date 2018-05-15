@@ -97,12 +97,13 @@ class Percolate
      */
     protected $escapeChars = [
         '\\' => '\\\\',
-        '-' => '\-',
-        '~' => '\~',
-        '<' => '\<',
-        '"' => '\"',
-        "'" => "\'",
-        '/' => '\/'
+        '-' => '\\-',
+        '~' => '\\~',
+        '<' => '\\<',
+        '"' => '\\"',
+        "'" => "\\'",
+        '/' => '\\/',
+        '!' => '\\!'
     ];
 
     /** @var SphinxQL */
@@ -123,7 +124,7 @@ class Percolate
     {
         $this->connection = $connection;
         $this->sphinxQL = new SphinxQL($this->connection);
-        $this->escapeChars = $this->sphinxQL->compileEscapeChars($this->escapeChars);
+
     }
 
 
@@ -193,6 +194,19 @@ class Percolate
             $query);
     }
 
+
+    /**
+     * @param $query
+     * @return mixed
+     */
+    protected function clearString($query)
+    {
+        return str_replace(
+            array_keys(array_merge($this->escapeChars, ['@' => ''])),
+            ['', '', '', '', '', '', '', '', '', ''],
+            $query);
+    }
+
     /**
      * Adding tags for insert query
      *
@@ -227,7 +241,7 @@ class Percolate
             throw new SphinxQLException(
                 'Allow only one filter. If there is a comma in the text, it must be shielded');
         }
-        $this->filters = $filter;
+        $this->filters = $this->clearString($filter);
         return $this;
     }
 
@@ -238,10 +252,15 @@ class Percolate
      * @param bool $noEscape
      *
      * @return $this
+     * @throws SphinxQLException
      */
     public function insert($query, $noEscape = false)
     {
         $this->clear();
+
+        if (empty($query)) {
+            throw new SphinxQLException('Query can\'t be empty');
+        }
         if (!$noEscape) {
             $query = $this->escapeString($query);
         }
@@ -332,9 +351,13 @@ class Percolate
      *
      * @param array|string $documents
      * @return $this
+     * @throws SphinxQLException
      */
     public function documents($documents)
     {
+        if (empty($documents)) {
+            throw new SphinxQLException('Document can\'t be empty');
+        }
         $this->documents = $documents;
 
         return $this;
@@ -415,6 +438,23 @@ class Percolate
     {
         if (!empty($this->documents)) {
 
+            if ($this->throwExceptions) {
+
+                if ($this->options[self::OPTION_DOCS_JSON]) {
+
+                    if (!is_array($this->documents)) {
+                        $json = $this->checkJson($this->documents);
+                        if (!$json) {
+                            throw new SphinxQLException('Documents must be in json format');
+                        }
+                    } else {
+                        if (!$this->isAssocArray($this->documents) && !is_array($this->documents[0])) {
+                            throw new SphinxQLException('Documents array must be associate');
+                        }
+                    }
+                }
+            }
+
             if (is_array($this->documents)) {
 
                 // If input is phpArray with json like
@@ -468,22 +508,6 @@ class Percolate
 
                     $this->options[self::OPTION_DOCS_JSON] = 0;
                     return $this->quoteString($this->documents);
-                }
-            }
-
-
-            if ($this->throwExceptions) {
-
-                if ($this->options[self::OPTION_DOCS_JSON]) {
-                    if (!is_array($this->documents)) {
-                        throw new SphinxQLException(
-                            'Options sets as json but documents is string (associate array expected)');
-                    }
-
-                    if (!$this->isAssocArray($this->documents) && !is_array($this->documents[0])) {
-                        throw new SphinxQLException('Documents array must be associate');
-
-                    }
                 }
             }
         }
@@ -563,5 +587,16 @@ class Percolate
     private function quoteString($string)
     {
         return '\'' . $string . '\'';
+    }
+
+
+    /**
+     * Get last compiled query
+     *
+     * @return string
+     */
+    public function getLastQuery()
+    {
+        return $this->sphinxQL->getCompiled();
     }
 }
