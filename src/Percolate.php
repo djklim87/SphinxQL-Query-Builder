@@ -85,7 +85,12 @@ class Percolate
 
     protected $tags = [];
 
-
+    /**
+     * Throw exceptions flag.
+     * Activates if option OPTION_DOCS_JSON setted
+     *
+     * @var int
+     */
     protected $throwExceptions = 0;
     /**
      * @var array
@@ -368,6 +373,11 @@ class Percolate
         return $options;
     }
 
+    /**
+     * Check is array associative
+     * @param array $arr
+     * @return bool
+     */
     private function isAssocArray(array $arr)
     {
         if (array() === $arr) {
@@ -378,6 +388,10 @@ class Percolate
 
     /**
      * Get documents for CALL PQ. If option setted JSON - returns json_encoded
+     *
+     * Now selection of supported types work automatically. You don't need set
+     * OPTION_DOCS_JSON to 1 or 0. But if you will set this option,
+     * automatically enables exceptions on unsupported types
      *
      *
      * 1) If expect json = 0:
