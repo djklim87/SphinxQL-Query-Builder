@@ -472,7 +472,7 @@ class Percolate
             }
 
 
-            if($this->throwExceptions){
+            if ($this->throwExceptions) {
 
                 if ($this->options[self::OPTION_DOCS_JSON]) {
                     if (!is_array($this->documents)) {
@@ -513,11 +513,11 @@ class Percolate
     private function checkJson($json)
     {
         if (is_array($json)) {
-            if(is_array($json[0])){
+            if (is_array($json[0])) {
                 return false;
             }
             $return = [];
-            foreach ($json as $item){
+            foreach ($json as $item) {
                 $return[] = $this->checkJson($item);
             }
             return '(' . implode(', ', $return) . ')';
