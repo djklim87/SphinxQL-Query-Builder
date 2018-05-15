@@ -28,7 +28,7 @@ use Foolz\SphinxQL\Exception\SphinxQLException;
  *    ->documents(['multiple documents', 'go this way'])        // see getDocuments function
  *    ->options([                                               // See https://docs.manticoresearch.com/latest/html/searching/percolate_query.html#call-pq
  *          Percolate::OPTION_VERBOSE => 1,
- *          Percolate::OPTION_DOC_JSON => 1
+ *          Percolate::OPTION_DOCS_JSON => 1
  *    ])
  *    ->execute();
  *
@@ -67,7 +67,7 @@ class Percolate
      * Options for CALL PQ
      * @var array
      */
-    protected $options = [self::OPTION_DOC_JSON => 1];
+    protected $options = [self::OPTION_DOCS_JSON => 1];
 
     /**
      * @var array
@@ -85,6 +85,8 @@ class Percolate
 
     protected $tags = [];
 
+
+    protected $throwExceptions = 0;
     /**
      * @var array
      */
@@ -104,7 +106,7 @@ class Percolate
     /**
      * CALL PQ option constants
      */
-    const OPTION_DOC_JSON = 'as docs_json';
+    const OPTION_DOCS_JSON = 'as docs_json';
     const OPTION_DOCS = 'as docs';
     const OPTION_VERBOSE = 'as verbose';
     const OPTION_QUERY = 'as query';
@@ -128,7 +130,7 @@ class Percolate
         $this->documents = null;
         $this->index = null;
         $this->query = null;
-        $this->options = [self::OPTION_DOC_JSON => 1];
+        $this->options = [self::OPTION_DOCS_JSON => 1];
         $this->type = 'call';
         $this->filters = [];
         $this->tags = [];
@@ -300,7 +302,7 @@ class Percolate
     {
         $value = intval($value);
         if (!in_array($key, [
-            self::OPTION_DOC_JSON,
+            self::OPTION_DOCS_JSON,
             self::OPTION_DOCS,
             self::OPTION_VERBOSE,
             self::OPTION_QUERY
@@ -310,6 +312,10 @@ class Percolate
 
         if ($value != 0 && $value != 1) {
             throw new SphinxQLException('Option value can be only 1 or 0');
+        }
+
+        if ($key == self::OPTION_DOCS_JSON) {
+            $this->throwExceptions = 1;
         }
 
         $this->options[$key] = $value;
@@ -381,8 +387,11 @@ class Percolate
      * 2) If expect json = 1:
      *      a) doc can be jsonOBJECT {"subject": "document about orange"}
      *      b) docs can be jsonARRAY of jsonOBJECTS [{"subject": "document about orange"}, {"doc": "document about orange"}]
-     *      c) doc can be associate array ['subject'=>'document about orange']
-     *      d) docs can be array of associate arrays [['subject'=>'document about orange'], ['doc'=>'document about orange']]
+     *      c) docs can be phpArray of jsonObjects ['{"subject": "document about orange"}', '{"doc": "document about orange"}']
+     *      d) doc can be associate array ['subject'=>'document about orange']
+     *      e) docs can be array of associate arrays [['subject'=>'document about orange'], ['doc'=>'document about orange']]
+     *
+     *
      *
      *
      * @return string
@@ -392,41 +401,77 @@ class Percolate
     {
         if (!empty($this->documents)) {
 
-            /** if jsonOBJECT or jsonARRAY of jsonOBJECTS */
-            $json = $this->checkJson($this->documents);
-            if ($json) {
-                $this->options[self::OPTION_DOC_JSON] = 1;
-                return $json;
-            }
+            if (is_array($this->documents)) {
 
+                // If input is phpArray with json like
+                // ->documents(['{"body": "body of doc 1", "title": "title of doc 1"}',
+                //             '{"subject": "subject of doc 3"}'])
+                //
+                // Checking first symbol of first array value. If [ or { - call checkJson
 
-            if ($this->options[self::OPTION_DOC_JSON]) {
-                if (!is_array($this->documents)) {
-                    throw new SphinxQLException(
-                        'Options sets as json but documents is string (associate array expected)');
-                }
+                if (!empty($this->documents[0]) && !is_array($this->documents[0]) &&
+                    ($this->documents[0][0] == '[' || $this->documents[0][0] == '{')) {
 
-                if (!$this->isAssocArray($this->documents)) {
-                    if (!is_array($this->documents[0])) {
-                        throw new SphinxQLException('Documents array must be associate');
+                    $json = $this->checkJson($this->documents);
+                    if ($json) {
+                        $this->options[self::OPTION_DOCS_JSON] = 1;
+                        return $json;
+                    }
 
-                    } elseif (!empty($this->documents[0]) && $this->isAssocArray($this->documents[0])) {
+                } else {
+                    if (!$this->isAssocArray($this->documents)) {
 
-                        /** if doc is array of associate arrays [['foo'=>'bar'], ['foo1'=>'bar1']] */
-                        return $this->convertArrayForQuery($this->documents);
+                        // if incoming single array like ['catch me if can', 'catch me']
+
+                        if (is_string($this->documents[0])) {
+                            $this->options[self::OPTION_DOCS_JSON] = 0;
+                            return '(' . $this->quoteString(implode('\', \'', $this->documents)) . ')';
+                        }
+
+                        // if doc is array of associate arrays [['foo'=>'bar'], ['foo1'=>'bar1']]
+                        if (!empty($this->documents[0]) && $this->isAssocArray($this->documents[0])) {
+                            $this->options[self::OPTION_DOCS_JSON] = 1;
+                            return $this->convertArrayForQuery($this->documents);
+                        }
+
+                    } else {
+                        if ($this->isAssocArray($this->documents)) {
+                            // Id doc is associate array ['foo'=>'bar']
+                            $this->options[self::OPTION_DOCS_JSON] = 1;
+                            return $this->quoteString(json_encode($this->documents));
+                        }
                     }
                 }
 
-                return $this->quoteString(json_encode($this->documents)); // Id doc is associate array ['foo'=>'bar']
             } else {
-                if (is_array($this->documents)) {
-                    return '(' . $this->quoteString(implode('\', \'', $this->documents)) . ')';
-                } else {
+                if (is_string($this->documents)) {
+
+                    $json = $this->checkJson($this->documents);
+                    if ($json) {
+                        $this->options[self::OPTION_DOCS_JSON] = 1;
+                        return $json;
+                    }
+
+                    $this->options[self::OPTION_DOCS_JSON] = 0;
                     return $this->quoteString($this->documents);
                 }
             }
 
 
+            if($this->throwExceptions){
+
+                if ($this->options[self::OPTION_DOCS_JSON]) {
+                    if (!is_array($this->documents)) {
+                        throw new SphinxQLException(
+                            'Options sets as json but documents is string (associate array expected)');
+                    }
+
+                    if (!$this->isAssocArray($this->documents) && !is_array($this->documents[0])) {
+                        throw new SphinxQLException('Documents array must be associate');
+
+                    }
+                }
+            }
         }
         throw new SphinxQLException('Documents can\'t be empty');
     }
@@ -454,7 +499,14 @@ class Percolate
     private function checkJson($json)
     {
         if (is_array($json)) {
-            return false;
+            if(is_array($json[0])){
+                return false;
+            }
+            $return = [];
+            foreach ($json as $item){
+                $return[] = $this->checkJson($item);
+            }
+            return '(' . implode(', ', $return) . ')';
         }
         $array = json_decode($json, true);
 
