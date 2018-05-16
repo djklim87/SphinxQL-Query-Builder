@@ -2,6 +2,7 @@
 
 use Foolz\SphinxQL\Exception\SphinxQLException;
 use Foolz\SphinxQL\Percolate;
+use Foolz\SphinxQL\Tests\TestUtil;
 
 /**
  * @package Foolz\SphinxQL
@@ -14,9 +15,9 @@ class PercolateQueriesTest extends \PHPUnit\Framework\TestCase
 
     public static function setUpBeforeClass()
     {
-        $conn = new \Foolz\SphinxQL\Connection();
-        $conn->setParams(['host' => '127.0.0.1', 'port' => 9306]);
-        self::$conn = $conn;
+	    $conn = TestUtil::getConnectionDriver();
+	    $conn->setParam('port', 9307);
+	    self::$conn = $conn;
 
         $sphinxQL = new \Foolz\SphinxQL\SphinxQL(self::$conn);
         $sphinxQL->query('TRUNCATE RTINDEX pq')->execute();

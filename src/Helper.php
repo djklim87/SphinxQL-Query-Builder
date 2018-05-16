@@ -99,10 +99,14 @@ class Helper
      *
      * @return SphinxQL A SphinxQL object ready to be ->execute();
      */
-    public function showTables()
-    {
-        return $this->query('SHOW TABLES');
-    }
+	public function showTables( $index ) {
+		$queryAppend = '';
+		if ( ! empty( $index ) ) {
+			$queryAppend = ' LIKE ' . $this->connection->quote($index);
+		}
+
+		return $this->query( 'SHOW TABLES' . $queryAppend );
+	}
 
     /**
      * Runs query: SHOW VARIABLES
