@@ -72,7 +72,7 @@ class Percolate
     /**
      * @var string
      */
-    protected $filters = [];
+    protected $filters = '';
 
     /**
      * Query type (call | insert)
