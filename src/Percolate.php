@@ -70,7 +70,7 @@ class Percolate
     protected $options = [self::OPTION_DOCS_JSON => 1];
 
     /**
-     * @var array
+     * @var string
      */
     protected $filters = [];
 
@@ -138,7 +138,7 @@ class Percolate
         $this->query = null;
         $this->options = [self::OPTION_DOCS_JSON => 1];
         $this->type = 'call';
-        $this->filters = [];
+        $this->filters = '';
         $this->tags = [];
     }
 
@@ -236,11 +236,6 @@ class Percolate
      */
     public function filter($filter)
     {
-        $filters = explode(',', $filter);
-        if (!empty($filters[1])) {
-            throw new SphinxQLException(
-                'Allow only one filter. If there is a comma in the text, it must be shielded');
-        }
         $this->filters = $this->clearString($filter);
         return $this;
     }
